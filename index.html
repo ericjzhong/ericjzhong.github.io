@@ -65,6 +65,22 @@ const AIAS_CONTACT_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxBkTv
      finish('We could not confirm delivery. Please contact us by email or try again.', true);
    }, 20000);
  });
+ // Google Apps Script sometimes completes the hidden-iframe POST without
+ // delivering its cross-frame postMessage to the parent page. An iframe load
+ // indicates the request finished, but not necessarily that email was delivered.
+ // Show a completed-state notice rather than leaving "Submitting" indefinitely.
+ iframe.addEventListener('load', () => {
+   if (!pending) return;
+   clearTimeout(timeout);
+   timeout = setTimeout(() => {
+     if (!pending) return;
+     submit.disabled = false;
+     submit.textContent = 'Send inquiry ↗';
+     form.removeAttribute('aria-busy');
+     show('Your submission has finished processing. If you do not hear from us, please email us directly.', false);
+     pending = null;
+   }, 1600);
+ });
  window.addEventListener('message', event => {
    if (!pending || !/^https:\/\/(script\.google\.com|[a-z0-9.-]+\.googleusercontent\.com)$/.test(event.origin)) return;
    const data = event.data;
