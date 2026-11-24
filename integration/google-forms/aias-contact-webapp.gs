@@ -21,9 +21,15 @@ function doPost(e) {
     });
     // HtmlService output runs in a Google sandbox. postMessage addresses the
     // top-level website without relying on third-party cookies or CORS fetch.
-    const html = '<!doctype html><html><body><script>window.top.postMessage(' +
-      JSON.stringify(JSON.parse(message)) + ',' + JSON.stringify(AIAS_SITE_ORIGIN) +
-      ');<\/script><p>Submission processed. You may return to the website.</p></body></html>';
+    // Apps Script HtmlService may render inside a nested Google iframe.
+    // Notify both the immediate parent and the top-level AIAS page.
+    const payload = JSON.stringify(JSON.parse(message));
+    const origin = JSON.stringify(AIAS_SITE_ORIGIN);
+    const script = '(function(){var p=' + payload + ';var o=' + origin +
+      ';try{window.parent.postMessage(p,o)}catch(e){}' +
+      'try{window.top.postMessage(p,o)}catch(e){}})();';
+    const html = '<!doctype html><html><body><script>' + script +
+      '</scr' + 'ipt><p>Submission processed.</p></body></html>';
     return HtmlService.createHtmlOutput(html).setTitle('AIAS contact submission');
   }
   try {
