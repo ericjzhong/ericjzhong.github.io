@@ -52,10 +52,8 @@ function doPost(e) {
     lock.waitLock(10000);
     try {
       const cache = CacheService.getScriptCache();
-      const cacheKey = 'aias_' + Utilities.base64EncodeWebSafe(
-        Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, requestId || name + email + message)
-      ).slice(0, 100);
-      if (cache.get(cacheKey)) return respond('ok');
+      const cacheKey = aiasContactKey_(requestId || name + email + message);
+      if (cache.get(cacheKey) === 'ok') return respond('ok');
       const formId = PropertiesService.getScriptProperties().getProperty('AIAS_FORM_ID');
       if (!formId) throw new Error('Existing AIAS form not configured');
       const form = FormApp.openById(formId);
@@ -92,7 +90,7 @@ function doPost(e) {
         name: 'AIAS Contact Intake',
         replyTo: email
       });
-      cache.put(cacheKey, '1', 21600);
+      cache.put(cacheKey, 'ok', 21600);
       return respond('ok');
     } finally {
       lock.releaseLock();
@@ -101,4 +99,35 @@ function doPost(e) {
     console.error('AIAS contact submit failed', error);
     return respond('error', 'We could not confirm delivery. Please contact us by email.');
   }
+}
+
+/**
+ * Cross-origin status check used by the AIAS website.
+ * JSONP is limited to a fixed callback name; no response data or user details
+ * are exposed, only whether this unpredictable submission ID was completed.
+ */
+function doGet(e) {
+  const p = (e && e.parameter) || {};
+  if (p.action !== 'status' || p.callback !== 'aiasContactStatusCallback') {
+    return ContentService.createTextOutput('Unsupported request')
+      .setMimeType(ContentService.MimeType.TEXT);
+  }
+  const id = String(p.request_id || '');
+  if (!/^[A-Za-z0-9_-]{12,100}$/.test(id)) {
+    return ContentService.createTextOutput('aiasContactStatusCallback({"status":"unknown"});')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  const key = aiasContactKey_(id);
+  const delivered = CacheService.getScriptCache().get(key) === 'ok';
+  const reply = 'aiasContactStatusCallback(' + JSON.stringify({
+    requestId: id,
+    status: delivered ? 'ok' : 'pending'
+  }) + ');';
+  return ContentService.createTextOutput(reply).setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+function aiasContactKey_(id) {
+  return 'aias_' + Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, id)
+  ).slice(0, 100);
 }
