@@ -37,19 +37,32 @@
     try {
       const endpoint = new URL(form.action);
       endpoint.pathname = '/ajax' + endpoint.pathname;
-      const response = await fetch(endpoint.toString(), {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-        body: JSON.stringify(Object.fromEntries(new FormData(form)))
-      });
-      const result = await response.json();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
+      let result, response;
+      try {
+        response = await fetch(endpoint.toString(), {
+          method: 'POST',
+          headers: {'Accept': 'application/json'},
+          body: new FormData(form),
+          signal: controller.signal
+        });
+        result = await response.json();
+      } finally {
+        clearTimeout(timeout);
+      }
       if (!response.ok || !(result.success === true || result.success === 'true')) {
-        throw new Error('Submission not confirmed');
+        const details = String(result?.message || '');
+        if (/activat|confirm/i.test(details)) {
+          show('Your request reached the form provider, but email delivery needs activation. Please check eric.j.zhong@gmail.com, including Spam, for the FormSubmit confirmation email.');
+          return;
+        }
+        throw new Error(details || 'Submission not confirmed');
       }
       form.reset();
       show('Thank you! Your inquiry has been submitted successfully. We look forward to connecting with you.');
     } catch (error) {
-      show('We couldn’t confirm your submission. Please try again or contact us by email.');
+      show(error.name === 'AbortError' ? 'The form service did not respond within 12 seconds. Your message has not been confirmed. Please try again or use the email link.' : 'We couldn’t confirm your submission. Please try again or contact us by email.');
     } finally {
       pending = false;
       button.disabled = false;
