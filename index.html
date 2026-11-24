@@ -37,21 +37,50 @@ const AIAS_CONTACT_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxBkTv
  const endpoint = AIAS_CONTACT_WEB_APP_URL.trim();
  if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec(?:\?.*)?$/.test(endpoint)) return;
  form.action = endpoint;
- let pending = null, timeout = null;
+ let pending = null, timeout = null, pollTimer = null, pollScript = null;
  function show(text, error) {
    status.hidden = false;
    status.classList.toggle('error', !!error);
    status.textContent = text;
  }
- function finish(text, error) {
+ function cleanup() {
    clearTimeout(timeout);
+   clearInterval(pollTimer);
+   if (pollScript) { pollScript.remove(); pollScript = null; }
+ }
+ function finish(text, error, confirmed) {
+   cleanup();
    pending = null;
    submit.disabled = false;
    submit.textContent = 'Send inquiry ↗';
    form.removeAttribute('aria-busy');
+   if (confirmed) form.reset();
    show(text, error);
  }
+ function confirm() {
+   if (!pending) return;
+   finish('Thank you! Your inquiry has been received. We will be in touch soon.', false, true);
+ }
+ window.aiasContactStatusCallback = data => {
+   if (!pending || !data || data.requestId !== pending) return;
+   if (data.status === 'ok') confirm();
+ };
+ function checkStatus() {
+   if (!pending || pollScript) return;
+   const url = new URL(endpoint);
+   url.searchParams.set('action', 'status');
+   url.searchParams.set('request_id', pending);
+   url.searchParams.set('callback', 'aiasContactStatusCallback');
+   url.searchParams.set('_', String(Date.now()));
+   const s = document.createElement('script');
+   pollScript = s;
+   s.src = url.toString();
+   s.async = true;
+   s.onload = s.onerror = () => { if (pollScript === s) pollScript = null; s.remove(); };
+   document.head.appendChild(s);
+ }
  form.addEventListener('submit', () => {
+   if (pending) return;
    const id = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : String(Date.now()) + '-' + String(Math.random()).slice(2);
    document.getElementById('aias-request-id').value = id;
    pending = id;
@@ -59,38 +88,24 @@ const AIAS_CONTACT_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxBkTv
    submit.textContent = 'Sending…';
    form.setAttribute('aria-busy', 'true');
    show('Submitting your inquiry…', false);
-   clearTimeout(timeout);
+   cleanup();
+   // Confirm via the independent backend status endpoint; never equate an
+   // iframe load with a successful email or Google Form submission.
+   pollTimer = setInterval(checkStatus, 1600);
    timeout = setTimeout(() => {
      if (!pending) return;
-     finish('We could not confirm delivery. Please contact us by email or try again.', true);
-   }, 20000);
+     finish('Your inquiry may have been received, but confirmation was unavailable. Please check before resubmitting to avoid duplicates.', true, false);
+   }, 30000);
  });
- // Google Apps Script sometimes completes the hidden-iframe POST without
- // delivering its cross-frame postMessage to the parent page. An iframe load
- // indicates the request finished, but not necessarily that email was delivered.
- // Show a completed-state notice rather than leaving "Submitting" indefinitely.
  iframe.addEventListener('load', () => {
-   if (!pending) return;
-   clearTimeout(timeout);
-   timeout = setTimeout(() => {
-     if (!pending) return;
-     submit.disabled = false;
-     submit.textContent = 'Send inquiry ↗';
-     form.removeAttribute('aria-busy');
-     show('Your submission has finished processing. If you do not hear from us, please email us directly.', false);
-     pending = null;
-   }, 1600);
+   if (pending) checkStatus();
  });
  window.addEventListener('message', event => {
    if (!pending || !/^https:\/\/(script\.google\.com|[a-z0-9.-]+\.googleusercontent\.com)$/.test(event.origin)) return;
    const data = event.data;
    if (!data || data.source !== 'aias-contact-backend' || data.requestId !== pending) return;
-   if (data.status === 'ok') {
-     form.reset();
-     finish('Thank you! Your inquiry has been received. We will be in touch soon.', false);
-   } else {
-     finish(data.detail || 'We could not confirm delivery. Please contact us by email.', true);
-   }
+   if (data.status === 'ok') confirm();
+   else finish(data.detail || 'We could not confirm delivery. Please contact us by email.', true, false);
  });
 })();
 </script></body></html>
