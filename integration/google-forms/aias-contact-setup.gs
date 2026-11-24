@@ -11,6 +11,12 @@ function setupAIASContact() {
   const existing = PropertiesService.getScriptProperties().getProperty('AIAS_FORM_ID');
   if (existing) {
     const form = FormApp.openById(existing);
+    if (form.supportsAdvancedResponderPermissions()) {
+      form.setPublished(true);
+      console.log('Published: ' + form.isPublished());
+    }
+    form.setAcceptingResponses(true);
+    console.log('Accepting responses: ' + form.isAcceptingResponses());
     console.log('Existing Form editor: ' + form.getEditUrl());
     console.log('Existing Form public: ' + form.getPublishedUrl());
     console.log('Embed URL: ' + form.getPublishedUrl().replace(/\/viewform(\?.*)?$/, '/viewform?embedded=true'));
@@ -19,6 +25,7 @@ function setupAIASContact() {
   const form = FormApp.create('AIAS | Project Inquiry');
   form.setDescription('Tell us a little about your organization and what you want to improve. Do not include confidential or sensitive information.');
   form.setConfirmationMessage('Thank you! Your inquiry has been received. We will be in touch soon.');
+  if (form.supportsAdvancedResponderPermissions()) form.setPublished(true);
   form.setAcceptingResponses(true);
   form.addTextItem().setTitle('Name').setRequired(true);
   const email = form.addTextItem().setTitle('Work email').setRequired(true);
